@@ -25,7 +25,7 @@ import {
   Menu,
 } from "lucide-react";
 import { api, initAuth, upload, PUBLIC_PREVIEW, Company, Row, Asset, Item, Doc } from "./api";
-import { useData, text, MediaView } from "./shared";
+import { useData, text, MediaView, BrandLoading } from "./shared";
 type SetSettings = { data: Company; enquiry_recipient: string };
 function useDirty(dirty: boolean) {
   useEffect(() => {
@@ -96,6 +96,8 @@ function OwnerLogin({ company, connected, checking, error, onRetry, onLogin }: L
         <span className="connection-dot" />
         {checking ? "Connecting securely…" : connected ? "Company server connected" : PUBLIC_PREVIEW ? "Backend activation required" : "Company server unavailable"}
       </div>
+      {checking && <BrandLoading compact />}
+      {busy && <BrandLoading compact label="LOADING…" />}
       {!connected && !checking && <div className="login-notice"><p>{PUBLIC_PREVIEW ? "The login page is ready. Signing in becomes available once the Django backend and database are connected to this Netlify site." : "We could not establish a secure session. Check your connection and try again."}</p>{!PUBLIC_PREVIEW && <button type="button" className="secondary" onClick={onRetry}><RefreshCw size={16} /> Try connection again</button>}</div>}
       <form onSubmit={async e => {
         e.preventDefault();
@@ -286,6 +288,7 @@ function useLoad<T>(path: string) {
   return { value, error, refresh };
 }
 function Notice({ error, message }: { error?: string; message?: string }) {
+  if (error && error.toLowerCase().startsWith("loading")) return <BrandLoading compact />;
   return (
     <>
       {error && (
@@ -1457,6 +1460,10 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
   } = useLoad<Asset[]>("owner/media/");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
+  const [localMedia, setLocalMedia] = useState<{url:string;kind:"image"|"video";name:string}|null>(null);
+  const [latestSaved, setLatestSaved] = useState<Asset|null>(null);
+  const [viewing, setViewing] = useState<Asset|null>(null);
+  useEffect(() => () => { if (localMedia?.url) URL.revokeObjectURL(localMedia.url); }, [localMedia]);
   const [filter, setFilter] = useState("all");
   const [editing, setEditing] = useState<Asset | null>(null);
   const [saved, setSaved] = useState("");
@@ -1487,10 +1494,13 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
               const input = e.currentTarget;
               const file = input.files?.[0];
               if (!file) return;
+              setLocalMedia(file.type.startsWith("image/") || file.type.startsWith("video/") ? {url:URL.createObjectURL(file), kind:file.type.startsWith("video/") ? "video" : "image", name:file.name} : null);
+              setLatestSaved(null);
               setProgress(0);
               setError("");
               try {
-                await upload(file, setProgress);
+                const uploaded = await upload(file, setProgress);
+                setLatestSaved(uploaded);
                 await refresh();
               } catch (e) {
                 setError((e as Error).message);
@@ -1501,6 +1511,7 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
             }}
           />
         </label>
+        {progress !== null && <BrandLoading compact label="LOADING…" />}
         {progress !== null && (
           <div role="status">
             <progress max={100} value={progress} />
@@ -1511,6 +1522,8 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
             </p>
           </div>
         )}
+        {localMedia && !latestSaved && <div className="upload-viewer"><h3>Selected from your gallery: {localMedia.name}</h3>{localMedia.kind === "video" ? <video src={localMedia.url} controls playsInline preload="metadata" /> : <img src={localMedia.url} alt={localMedia.name} />}<p>{progress !== null ? "Uploading to your private media library…" : "Local selection only. If upload failed, this file is not saved on the server."}</p></div>}
+        {latestSaved && <div className="upload-viewer" role="status"><h3>Uploaded successfully — view or play now</h3><MediaView asset={latestSaved} /><p>Private until you choose Publish to gallery below.</p></div>}
       </div>
       <div className="tabs">
         {["all", "image", "video", "document", "unused"].map((f) => (
@@ -1541,6 +1554,19 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
                 {a.kind} {a.gallery ? "• In public gallery" : ""}
               </p>
               <div className="row-tools">
+                {a.kind !== "document" && <button type="button" className="secondary small" disabled={busy} onClick={async () => {
+                  setBusy(true); setError("");
+                  try { setViewing(await api(`owner/media/${a.id}/playback/`)); }
+                  catch(e) { setError((e as Error).message); }
+                  finally { setBusy(false); }
+                }}><Eye size={16} /> {a.kind === "video" ? "Play video" : "View image"}</button>}
+                {a.kind !== "document" && <button type="button" className="secondary small" onClick={async () => {
+                  if (!a.gallery && !confirm("Publish this file to the public gallery?")) return;
+                  setError(""); setBusy(true);
+                  try { await api(`owner/media/${a.id}/`, "PATCH", {gallery:!a.gallery}); await refresh(); await publicRefresh(); }
+                  catch(e) { setError((e as Error).message); }
+                  finally { setBusy(false); }
+                }} disabled={busy}>{a.gallery ? "Unpublish" : "Publish to gallery"}</button>}
                 <button
                   className="secondary small"
                   onClick={() => {
@@ -1576,6 +1602,13 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
             </article>
           ))}
       </div>
+      {viewing && <Modal title={viewing.kind === "video" ? "Play uploaded video" : "View uploaded image"} close={() => setViewing(null)}><div className="full-media-view"><MediaView asset={viewing} /></div><button type="button" className="secondary small" disabled={busy} onClick={async () => {
+        if (!viewing) return;
+        setBusy(true); setError("");
+        try { setViewing(await api(`owner/media/${viewing.id}/playback/`)); }
+        catch (e) { setError((e as Error).message); }
+        finally { setBusy(false); }
+      }}>Refresh secure media link</button></Modal>}
       {editing && (
         <Modal
           title="Media details"

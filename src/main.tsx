@@ -37,7 +37,8 @@ import { api, initAuth, PUBLIC_PREVIEW, Asset, Company, Item, PublicData, Row } 
 const Dashboard = React.lazy(() =>
   import("./owner").then((m) => ({ default: m.Dashboard })),
 );
-import { DataContext, useData, text, MediaView } from "./shared";
+import { DataContext, useData, text, MediaView, BrandLoading, BackendActivity } from "./shared";
+import { publicFallback } from "./public-fallback";
 import "./styles.css";
 const icons = [Wind, Zap, Sun, Truck, Settings2, SlidersHorizontal, HardHat];
 function Brand({ c }: { c: Company }) {
@@ -61,18 +62,16 @@ function Brand({ c }: { c: Company }) {
   );
 }
 function App() {
-  const [data, setData] = useState<PublicData>({
-    company: {},
-    content: [],
-    gallery: [],
-    documents: [],
-  });
+  const [data, setData] = useState<PublicData>(publicFallback);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [backendReady, setBackendReady] = useState(false);
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       setData(await api("public/"));
       setError("");
+      setBackendReady(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -93,36 +92,17 @@ function App() {
     };
   }, [refresh]);
   return (
-    <DataContext.Provider value={{ data, refresh }}>
+    <DataContext.Provider value={{ data, refresh, pending: loading, loadError: error, backendReady }}>
       <BrowserRouter>
         <ScrollAndMeta />
-        {loading ? (
-          <div className="center" role="status">
-            Connecting to the company website… The first connection may take about a minute.
-          </div>
-        ) : error ? (
-          <div className="center" role="alert">
-            <h1>Unable to load the website</h1>
-            <p>{error}</p>
-            <button onClick={refresh}>Try again</button>
-          </div>
-        ) : (
-          <Routes>
-            <Route
-              path="/owner/*"
-              element={
-                <React.Suspense
-                  fallback={
-                    <div className="center">Loading owner workspace…</div>
-                  }
-                >
-                  <Dashboard />
-                </React.Suspense>
-              }
-            />
-            <Route path="*" element={<PublicSite />} />
-          </Routes>
-        )}
+        <BackendActivity />
+        <Routes>
+          <Route
+            path="/owner/*"
+            element={<React.Suspense fallback={<BrandLoading label="LOADING…" />}><Dashboard /></React.Suspense>}
+          />
+          <Route path="*" element={<PublicSite />} />
+        </Routes>
       </BrowserRouter>
     </DataContext.Provider>
   );
@@ -175,7 +155,7 @@ function ScrollAndMeta() {
   return null;
 }
 function PublicSite() {
-  const { data } = useData();
+  const { data, pending, loadError, backendReady, refresh } = useData();
   const c = data.company;
   const [open, setOpen] = useState(false);
   const loc = useLocation();
@@ -234,6 +214,7 @@ function PublicSite() {
         </div>
       </header>
       <main id="main">
+        {!pending && loadError && <div className="wrap backend-status" role="alert"><p>Live updates are temporarily unavailable. Showing confirmed company information; media and new projects may be missing.</p><button type="button" className="secondary small" onClick={() => void refresh()}>Retry connection</button></div>}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />

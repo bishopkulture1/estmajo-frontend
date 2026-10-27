@@ -1,12 +1,30 @@
 import { safeRead } from "./safe-read";
 export const PUBLIC_PREVIEW=import.meta.env.VITE_PUBLIC_PREVIEW === 'true';
 let csrf = "";
+// Minimal request-status store. No change to network routing, credentials or API shape.
+let backendRequests = 0;
+const backendListeners = new Set<() => void>();
+export const getBackendActivity = () => backendRequests;
+export function subscribeBackendActivity(listener: () => void) {
+  backendListeners.add(listener);
+  return () => { backendListeners.delete(listener); };
+}
+function changeBackendActivity(delta: number) {
+  backendRequests = Math.max(0, backendRequests + delta);
+  backendListeners.forEach(listener => listener());
+}
+
 export async function initAuth() {
   if(PUBLIC_PREVIEW)return {authenticated:false,username:'',csrf:''};
-  const d = await safeRead("/api/auth/");
-  if (typeof d.csrf !== "string") throw Error("Unable to establish a secure session.");
-  csrf = d.csrf;
-  return d;
+  changeBackendActivity(1);
+  try {
+    const d = await safeRead("/api/auth/");
+    if (typeof d.csrf !== "string") throw Error("Unable to establish a secure session.");
+    csrf = d.csrf;
+    return d;
+  } finally {
+    changeBackendActivity(-1);
+  }
 }
 export async function api(path: string, method = "GET", body?: unknown) {
   if(PUBLIC_PREVIEW){
@@ -17,7 +35,9 @@ export async function api(path: string, method = "GET", body?: unknown) {
     }
     throw Error('The owner workspace requires the connected company server.');
   }
-  if (path === "public/" && method === "GET") return safeRead("/api/public/");
+  changeBackendActivity(1);
+  try {
+  if (path === "public/" && method === "GET") return await safeRead("/api/public/");
   if (method !== "GET" && !csrf) await initAuth();
   const r = await fetch("/api/" + path, {
     method,
@@ -33,6 +53,9 @@ export async function api(path: string, method = "GET", body?: unknown) {
   if (!r.ok) throw Error(flatten(d));
   if (d.csrf) csrf = d.csrf;
   return d;
+  } finally {
+    changeBackendActivity(-1);
+  }
 }
 function flatten(d: unknown, prefix = ""): string {
   if (typeof d === "string") return prefix + d;
@@ -58,7 +81,8 @@ export async function upload(
   onProgress: (p: number) => void,
 ): Promise<Asset> {
   if (!csrf) await initAuth();
-  return new Promise((resolve, reject) => {
+  changeBackendActivity(1);
+  return new Promise<Asset>((resolve, reject) => {
     const x = new XMLHttpRequest();
     x.open("POST", "/api/owner/media/");
     x.setRequestHeader("X-CSRFToken", csrf);
@@ -89,7 +113,7 @@ export async function upload(
     const data = new FormData();
     data.append("file", file);
     x.send(data);
-  });
+  }).finally(() => changeBackendActivity(-1));
 }
 export type Asset = {
   id: number;
