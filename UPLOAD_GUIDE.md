@@ -1,18 +1,25 @@
-# ESTMAJO FRONTEND — upload to `bishopkulture1/estmajo-frontend`
+# ESTMAJO FRONTEND — CORRECTED APPLICATION CODE
 
-Target branch: `estmajo-frontend-update` (create it from `main`). DO NOT upload to the backend repository.
+Repository: https://github.com/bishopkulture1/estmajo-frontend
+**EXISTING update branch: `estmajo_frontend_update` (with underscores).** Do not commit to `main`.
 
-Unzip this archive and upload its **contents** to the branch root: `src/`, `public/`, `netlify/`, `index.html`, `package.json`, `package-lock.json`, `netlify.toml`, and configuration files. Do not upload the ZIP as a single repo file. Preserve existing source files.
+This ZIP contains the complete frontend source, with files at the repository root. Extract it first. On GitHub, switch to the update branch before editing/uploading. If uploading from a phone, open each destination folder and replace the corresponding file, rather than uploading another ZIP or placing the entire extracted folder inside the repository.
 
-This is the original React 19 + TypeScript + Vite app with these targeted frontend adjustments:
-- Confirmed company details and service list render immediately as fallback while Render wakes; dynamic backend data replaces them on success.
-- The original logo pulses with **LOADING…** in a visible section when public backend data, owner connection or upload is pending.
-- An image or video selected from the device gallery can be viewed/played locally during upload. When the backend confirms upload, the signed saved media is displayed in the administrator media library; images and videos also open in a larger viewer. A separate Publish to gallery action keeps the upload private until approved.
-- Only existing owner/administrator sign-in is retained; no manager sign-in added.
-- Existing same-origin Netlify Edge Function preserved.
+## Files to replace on your already-created update branch
 
-**Important deployment prerequisites:** `DJANGO_API_ORIGIN` and `NETLIFY_PROXY_SECRET` must be configured privately on Netlify and the same proxy secret on Render. `VITE_PUBLIC_PREVIEW=true` must NOT be enabled on production when the Django backend is expected to work; it intentionally disables live owner features. Do not place secrets in VITE variables.
+- `src/main.tsx` — static confirmed content appears immediately without waiting for Render.
+- `src/shared.tsx` — visible and fixed JSX for real image/video rendering and pulsing logo LOADING indicator.
+- `src/api.ts` — request activity indicator and existing same-origin API calls.
+- `src/owner.tsx` — device gallery upload display, image viewer, playable video, fresh signed playback link, manual publish/unpublish.
+- `src/styles.css` — original styles plus compact loading indicator and media viewer styles.
+- `src/public-fallback.ts` — public confirmed details and services while backend loads (include if missing).
+- `netlify.toml` — CORRECTED for standalone frontend repo root: `npm ci && npm run build`, publish `dist`.
+- `UPLOAD_GUIDE.md` — updated upload guidance; optional for deployment.
 
-**To remove the Netlify platform watermark:** Netlify project dashboard → **Project configuration > General > Powered by Netlify badge > Off > Save**. This is an account/site setting, not a change that can be guaranteed by editing source code. It does not require a redeploy.
+The other files in this ZIP preserve the original React + TypeScript + Vite architecture. Preserve `public/brand/estmajo-logo.jpg`, `netlify/edge-functions/django-api.ts`, and all existing project config. Do not upload `.env` secrets.
 
-**Validation remaining:** Run `npm ci && npm run build`, test signed ImageKit playback on the deployed domain, verify database/owner login and the Netlify badge setting. The package has not been deployed to or tested against the live production services.
+**Deployment order:** Test and deploy the compatible backend update first, then frontend. Render's free service may take time to start; the public site remains visible and a non-blocking pulsating ESTMAJO logo with bold **LOADING…** appears during backend operations. A file's private ImageKit link expires and is renewed on view/play.
+
+**Important:** This archive was syntax-checked, but a full npm dependency build and live Netlify/Render/ImageKit test could not be run here. Do not merge without verifying `npm ci && npm run build`, owner login, gallery/image/video playback, and public site navigation on a test deployment.
+
+**Netlify platform badge:** Remove it from the Netlify site's dashboard (Project configuration → General → Powered by Netlify badge, if that option is shown). Source code cannot turn off Netlify's account-level badge. Changing the branding setting does not require changing hosting.
