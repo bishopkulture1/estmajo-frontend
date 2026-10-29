@@ -1460,6 +1460,7 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
   } = useLoad<Asset[]>("owner/media/");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File|null>(null);
   const [localMedia, setLocalMedia] = useState<{url:string;kind:"image"|"video";name:string}|null>(null);
   const [latestSaved, setLatestSaved] = useState<Asset|null>(null);
   const [viewing, setViewing] = useState<Asset|null>(null);
@@ -1472,8 +1473,8 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
   const dirty = !!editing && JSON.stringify(editing) !== saved;
   useDirty(dirty);
   useEffect(() => {
-    onDirty(dirty || progress !== null);
-  }, [dirty, progress, onDirty]);
+    onDirty(dirty || progress !== null || selectedFile !== null);
+  }, [dirty, progress, selectedFile, onDirty]);
   return (
     <>
       <Notice error={error || loadError} />
@@ -1485,32 +1486,38 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
           attached to published content or selected for public display.
         </p>
         <label className="file-picker">
-          Upload file
+          Choose file to preview
           <input
             disabled={progress !== null}
             type="file"
             accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,.pdf"
-            onChange={async (e) => {
+            onChange={(e) => {
               const input = e.currentTarget;
               const file = input.files?.[0];
+              input.value = "";
               if (!file) return;
-              setLocalMedia(file.type.startsWith("image/") || file.type.startsWith("video/") ? {url:URL.createObjectURL(file), kind:file.type.startsWith("video/") ? "video" : "image", name:file.name} : null);
+              const ext = file.name.split(".").pop()?.toLowerCase() || "";
+              const kind = ["jpg","jpeg","png","webp"].includes(ext) ? "image" : ["mp4","webm"].includes(ext) ? "video" : ext === "pdf" ? "document" : null;
+              if (!kind) { setError("Choose JPEG, PNG, WebP, MP4, WebM or PDF. Convert unsupported formats before uploading."); return; }
+              setSelectedFile(file);
+              setLocalMedia(kind === "document" ? null : {url:URL.createObjectURL(file), kind, name:file.name});
               setLatestSaved(null);
-              setProgress(0);
               setError("");
-              try {
-                const uploaded = await upload(file, setProgress);
-                setLatestSaved(uploaded);
-                await refresh();
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setProgress(null);
-                input.value = "";
-              }
             }}
           />
         </label>
+        {selectedFile && <div className="row-tools"><p>{selectedFile.name} — {(selectedFile.size / 1048576).toFixed(1)} MB</p>
+          <button type="button" disabled={progress !== null} onClick={async () => {
+            setProgress(0); setError("");
+            try {
+              const uploaded = await upload(selectedFile, setProgress);
+              setLatestSaved(uploaded); setSelectedFile(null); setLocalMedia(null);
+              await refresh();
+            } catch (e) { setError((e as Error).message); }
+            finally { setProgress(null); }
+          }}>Upload to private library</button>
+          <button type="button" className="secondary" disabled={progress !== null} onClick={() => {setSelectedFile(null);setLocalMedia(null);setError("");}}>Cancel selection</button>
+        </div>}
         {progress !== null && <BrandLoading compact label="LOADING…" />}
         {progress !== null && (
           <div role="status">
@@ -1522,7 +1529,7 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
             </p>
           </div>
         )}
-        {localMedia && !latestSaved && <div className="upload-viewer"><h3>Selected from your gallery: {localMedia.name}</h3>{localMedia.kind === "video" ? <video src={localMedia.url} controls playsInline preload="metadata" /> : <img src={localMedia.url} alt={localMedia.name} />}<p>{progress !== null ? "Uploading to your private media library…" : "Local selection only. If upload failed, this file is not saved on the server."}</p></div>}
+        {localMedia && !latestSaved && <div className="upload-viewer"><h3>Selected from your gallery: {localMedia.name}</h3>{localMedia.kind === "video" ? <video src={localMedia.url} controls playsInline preload="metadata" /> : <img src={localMedia.url} alt={localMedia.name} />}<p>{progress !== null ? "Uploading to your private media library…" : "Preview only. Choose Upload to private library when ready; publishing is a separate action."}</p></div>}
         {latestSaved && <div className="upload-viewer" role="status"><h3>Uploaded successfully — view or play now</h3><MediaView asset={latestSaved} /><p>Private until you choose Publish to gallery below.</p></div>}
       </div>
       <div className="tabs">
@@ -1556,7 +1563,7 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
               <div className="row-tools">
                 {a.kind !== "document" && <button type="button" className="secondary small" disabled={busy} onClick={async () => {
                   setBusy(true); setError("");
-                  try { setViewing(await api(`owner/media/${a.id}/playback/`)); }
+                  try { setViewing(await api(`owner/media/${a.id}/`)); }
                   catch(e) { setError((e as Error).message); }
                   finally { setBusy(false); }
                 }}><Eye size={16} /> {a.kind === "video" ? "Play video" : "View image"}</button>}
@@ -1605,7 +1612,7 @@ function MediaManager({ onDirty }: { onDirty: (d: boolean) => void }) {
       {viewing && <Modal title={viewing.kind === "video" ? "Play uploaded video" : "View uploaded image"} close={() => setViewing(null)}><div className="full-media-view"><MediaView asset={viewing} /></div><button type="button" className="secondary small" disabled={busy} onClick={async () => {
         if (!viewing) return;
         setBusy(true); setError("");
-        try { setViewing(await api(`owner/media/${viewing.id}/playback/`)); }
+        try { setViewing(await api(`owner/media/${viewing.id}/`)); }
         catch (e) { setError((e as Error).message); }
         finally { setBusy(false); }
       }}>Refresh secure media link</button></Modal>}

@@ -41,6 +41,7 @@ export async function api(path: string, method = "GET", body?: unknown) {
   if (method !== "GET" && !csrf) await initAuth();
   const r = await fetch("/api/" + path, {
     method,
+    signal: AbortSignal.timeout(45000),
     credentials: "same-origin",
     cache: "no-store",
     headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
